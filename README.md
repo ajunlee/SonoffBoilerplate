@@ -1,3 +1,13 @@
+### update
+
+This one is forked from https://github.com/tzapu/SonoffBoilerplate
+
+I just added the Alexa Wemo Switch emulator
+> https://github.com/witnessmenow/esp8266-alexa-wemo-emulator
+
+So, you need to isntall [esp8266-alexa-wemo-emulator](https://github.com/witnessmenow/esp8266-alexa-wemo-emulator) first.
+
+
 # SonoffBoilerplate
 
 This is a replacement firmware (Arduino IDE with ESP8266 core needed) for the ESP8266 based Sonoff devices. Use it as a starting block for customizing your Sonoff.
