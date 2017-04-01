@@ -75,11 +75,13 @@ typedef struct {
 
 #define EEPROM_SALT 12661
 typedef struct {
-  char  bootState[4]      = "on";
-  char  blynkToken[33]    = "0c2a45ca4cba4fb58f4b3652071b808c";
-  char  blynkServer[33]   = "tzapu.com";
-  char  blynkPort[6]      = "9442";
-  char  mqttHostname[33]  = "tzapu.com";
+  char  bootState[4]      = "off";
+  char  deviceName[33]    = "kitchen";
+  char  blynkToken[33]    = "00000000000000000000000000000000";
+  //char  blynkServer[33]   = "blynk-cloud.com";
+  char  blynkServer[33]   = "";
+  char  blynkPort[6]      = "8442";
+  char  mqttHostname[33]  = "";
   char  mqttPort[6]       = "1883";
   char  mqttClientID[24]  = "spk-socket";
   char  mqttTopic[33]     = HOSTNAME;
@@ -90,10 +92,24 @@ WMSettings settings;
 
 #include <ArduinoOTA.h>
 
-
 //for LED status
 #include <Ticker.h>
 Ticker ticker;
+
+
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiUdp.h>
+#include <SimpleTimer.h>
+#include "WemoSwitch.h" //esp8266-alexa-wemo-emulator
+#include "WemoManager.h" //https://github.com/witnessmenow/esp8266-alexa-wemo-emulator
+#include "CallbackFunction.h"
+
+void lightOn();
+void lightOff();
+WemoManager wemoManager;
+//TODO multi device name (relay) support
+WemoSwitch *light = NULL;
 
 
 const int CMD_WAIT = 0;
@@ -187,6 +203,14 @@ void turnOn(int channel = 0) {
 void turnOff(int channel = 0) {
   int relayState = LOW;
   setState(relayState, channel);
+}
+void lightOn(){
+  Serial.println("Switch 1 turn on ...");
+  turnOn();
+}
+void lightOff(){
+  Serial.println("Switch 1 turn off ...");
+  turnOff();
 }
 
 void toggleState() {
@@ -381,11 +405,14 @@ void setup()
 
   WiFiManagerParameter custom_boot_state("boot-state", "on/off on boot", settings.bootState, 33);
   wifiManager.addParameter(&custom_boot_state);
-
-
   Serial.println(settings.bootState);
 
-#ifdef INCLUDE_BLYNK_SUPPORT
+  //TODO multi device name (relay) support
+  WiFiManagerParameter custom_device_name("device-name", "device name for wemo", settings.deviceName, 33);
+  wifiManager.addParameter(&custom_device_name);
+  Serial.println(settings.deviceName);
+
+  #ifdef INCLUDE_BLYNK_SUPPORT
   Serial.println(settings.blynkToken);
   Serial.println(settings.blynkServer);
   Serial.println(settings.blynkPort);
@@ -401,10 +428,10 @@ void setup()
 
   WiFiManagerParameter custom_blynk_port("blynk-port", "port", settings.blynkPort, 6);
   wifiManager.addParameter(&custom_blynk_port);
-#endif
+  #endif
 
 
-#ifdef INCLUDE_MQTT_SUPPORT
+  #ifdef INCLUDE_MQTT_SUPPORT
   Serial.println(settings.mqttHostname);
   Serial.println(settings.mqttPort);
   Serial.println(settings.mqttClientID);
@@ -424,7 +451,7 @@ void setup()
 
   WiFiManagerParameter custom_mqtt_topic("mqtt-topic", "Topic", settings.mqttTopic, 33);
   wifiManager.addParameter(&custom_mqtt_topic);
-#endif
+  #endif
 
   //set config save notify callback
   wifiManager.setSaveConfigCallback(saveConfigCallback);
@@ -442,20 +469,22 @@ void setup()
     Serial.println("Saving config");
 
     strcpy(settings.bootState, custom_boot_state.getValue());
+    strcpy(settings.deviceName, custom_device_name.getValue());
 
-#ifdef INCLUDE_BLYNK_SUPPORT
+    #ifdef INCLUDE_BLYNK_SUPPORT
     strcpy(settings.blynkToken, custom_blynk_token.getValue());
     strcpy(settings.blynkServer, custom_blynk_server.getValue());
     strcpy(settings.blynkPort, custom_blynk_port.getValue());
-#endif
+    #endif
 
-#ifdef INCLUDE_MQTT_SUPPORT
+    #ifdef INCLUDE_MQTT_SUPPORT
     strcpy(settings.mqttHostname, custom_mqtt_hostname.getValue());
     strcpy(settings.mqttPort, custom_mqtt_port.getValue());
     strcpy(settings.mqttClientID, custom_mqtt_client_id.getValue());
     strcpy(settings.mqttTopic, custom_mqtt_topic.getValue());
-#endif
+    #endif
 
+    Serial.println(settings.deviceName);
     Serial.println(settings.bootState);
     Serial.println(settings.blynkToken);
     Serial.println(settings.blynkServer);
@@ -466,7 +495,19 @@ void setup()
     EEPROM.end();
   }
 
-#ifdef INCLUDE_BLYNK_SUPPORT
+  #ifdef UPNP for Amazon Alexa
+  //TODO multi relay(channel) support
+  String _deviceName = "kitchen";
+  if (strlen(settings.deviceName) > 0) {
+    _deviceName = settings.deviceName;
+  }
+  wemoManager.begin();
+  // Format: Alexa invocation name, local port no, on callback, off callback
+  light = new WemoSwitch(_deviceName, 80, lightOn, lightOff);
+  wemoManager.addDevice(*light);
+  #endif
+  
+  #ifdef INCLUDE_BLYNK_SUPPORT
   //config blynk
   if (strlen(settings.blynkToken) == 0) {
     BLYNK_ENABLED = false;
@@ -474,10 +515,10 @@ void setup()
   if (BLYNK_ENABLED) {
     Blynk.config(settings.blynkToken, settings.blynkServer, atoi(settings.blynkPort));
   }
-#endif
+  #endif
 
 
-#ifdef INCLUDE_MQTT_SUPPORT
+  #ifdef INCLUDE_MQTT_SUPPORT
   //config mqtt
   if (strlen(settings.mqttHostname) == 0) {
     MQTT_ENABLED = false;
@@ -485,7 +526,7 @@ void setup()
   if (MQTT_ENABLED) {
     mqttClient.set_server(settings.mqttHostname, atoi(settings.mqttPort));
   }
-#endif
+  #endif
 
   //OTA
   ArduinoOTA.onStart([]() {
@@ -539,6 +580,7 @@ void setup()
 
 void loop()
 {
+  wemoManager.serverLoop();
 
   //ota loop
   ArduinoOTA.handle();
